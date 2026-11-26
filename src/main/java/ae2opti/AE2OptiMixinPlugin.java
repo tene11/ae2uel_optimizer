@@ -53,6 +53,7 @@ public class AE2OptiMixinPlugin implements IMixinConfigPlugin {
         KEYS.put("EnergyGridCacheMixin", "energyGridCache");
         KEYS.put("CraftingCPUClusterMixin", "craftingCpuCluster");
         KEYS.put("CraftingGridCacheMixin", "craftingGridCache");
+        KEYS.put("ContainerCraftingCPUMixin", "craftingCpuGui");
         KEYS.put("GridConnectionMixin", "gridConnection");
         KEYS.put("TickHandlerMixin", "tickHandler");
         KEYS.put("PartP2PFEPowerMixin", "p2pFePower");

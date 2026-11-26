@@ -9,7 +9,7 @@
 | 1（不具合） | サブネットの混線・不安定 | ディメンション移動などのときに、まれにサブネットとメインネットが混ざる | **1-E** 合体した瞬間をログに残す → **1-H** アンロード済みのタイルが「幽霊ノード」になる穴をふさぐ（本命、実装済み・確認待ち）→ **1-F** ケーブル付け直し時の一瞬の合体を防ぐ |
 | 1（負荷） | 石英ファイバーと電力処理（約14%） | ファイバーがあると近道が効かない。満タン時はつながった網を全部たどる | **1-A** 自分の網で足りたら即座に返す（結果は元と同じ）→ **1-B** つながった網の一覧を tick ごとにキャッシュ（本命）→ 1-C は任意 |
 | 1.5 | P2P FE（18.5%） | 満タンでも出口ごとに2回呼ぶ。毎回隣のブロックを探し直す | P-1 出口の先をキャッシュ、P-2 無駄な2周目を飛ばす、P-3 0を返した出口を飛ばす、**P-4 まとめて1回で流し込む** |
-| 2 | クラフト CPU（10.5%） | `executeCrafting` が重い | 既存の間引き処理が効いているか確認 → busy 判定をキャッシュ |
+| 2 | クラフト CPU（10.5% → 2.28%） | `executeCrafting` が重い。同じ CPU だけ後回しになる | 均等割りで後回しを修正、busy 判定をキャッシュ、送り先が全部埋まっているときは材料チェックを省略（実装済み・確認待ち） |
 | 3 | AE2FC の Fluid Level Maintainer（4.1%） | ストレージが更新されるたびにクラフトジョブを作り直す | 1tick に1回までにまとめる（AE2FC があるときだけ有効） |
 | 4 | P2P を long 化（＋必要なら BigInteger） | FE は1回あたり `int`（約21億）が上限 | P2P の中を `long` にする。`long` 対応の API を持つ相手には `long` で渡し、それ以外は分割して渡す。貯める値だけ `HugeCount` 方式。Better P2P の不具合（周波数の衝突など）も opti 側の mixin で直す |
 | 5（保留） | Lazy AE2 | Level Maintainer の GUI の不具合 | **Lazy AE2 Patch で対応**。足りない部分があれば追加で直す |
@@ -301,28 +301,76 @@
 
 ## 優先度2：クラフト CPU（10.5%）
 
-**メモ（2026-11-26 再計測）**: 既存の間引き（throttleCpu・sharedGridBudget）で 2.28% まで下がり、いったんひと区切り。後で詰めるときの候補：
-- 内訳: `DualityInterface.pushPattern` 0.78%（本来の仕事なのでほぼ削れない）、`canCraft` 0.27%（シミュレートでの取り出し）、`isBusy`（インターフェイス＋Packager）0.27%、`executeCrafting` 自身 0.22%
-- 候補A: `isBusy` の結果を tick 内で覚えておく（埋まっていると分かった送り先に聞き直さない）
-- 候補B: 材料が足りなかったパターンは、ストレージの中身が変わるまで `canCraft` をやり直さない
-- 候補C: 間引きでクラフトが遅いと感じるなら、軽さを保ったまま速くする方向も検討
-- 着手する前に、大量クラフト中の spark を取り直すこと（今回の計測では大量クラフトをしていなかった可能性がある）
+**メモ（2026-11-26 再計測）**: 既存の間引き（throttleCpu・sharedGridBudget）で 2.28% まで下がり、いったんひと区切り。内訳: `DualityInterface.pushPattern` 0.78%（本来の仕事なのでほぼ削れない）、`canCraft` 0.27%、`isBusy`（インターフェイス＋Packager）0.27%、`executeCrafting` 自身 0.22%。
 
-- [ ] 既存の `CraftingCPUClusterMixin`（時間予算による間引き）が、この profile で実際に効いているか確認します。設定値と `CraftingBudgetHolder` の働きを見ます。
-- [ ] **不具合（2026-11-26 コードレビューで発見）**：`sharedGridBudget` で、同じ CPU ばかり後回しになる。
-  - `CraftingGridCache` が CPU を回す順番は毎 tick 同じなので、網の予算を使い切ったあとに回ってくる CPU はいつも同じになり、ずっと遅いままになる。
-  - `minCoProcessorsWhenGridBusy=0` だと、AE2 が直近3 tick の使用数（`usedOps`）を引くため、後回しの CPU は実際には「3 tick に1パターン」まで落ちる。
-  - 直し方の候補：前の tick に後回しにされた CPU は、次の tick では後回しにしない（優先する）。または回し始める CPU を tick ごとにずらす。
-  - 対象：`CraftingCPUClusterMixin`（49–52 行目の gridBusy 判定、74–76 行目）。CPU まわりを触るときに一緒に直す。
-- [ ] `executeCrafting` の内訳を見て、どこに手を入れるか決めます。
-  - NAE2 の `pushPattern` ラップ: 3.0%
-  - `canCraft`: 1.5%（そのうち `MECraftingInventory.extractItems` が 0.8%）
-  - `extractAEPower`: 1.0%（1-A で減る見込み）
-  - `DualityInterface.isBusy`: 0.7%
-  - `AEItemStack.fromItemStack`: 0.7%
-  - `getMediums`: 0.5%
-  - PackagedAuto の `isBusy`: 0.4%
-- [ ] busy だったインターフェースや Packager を、同じ tick の中で再判定しないようにキャッシュできないか検討します。
+**今回やること（2026-11-26 決定）**: 候補A（isBusy のキャッシュ）＋候補C（軽さを保って速くする）＋後回しの不具合を均等割りで直す。候補B（材料不足のパターンの canCraft を抑える）は今回はやらない。
+
+- [x] **後回しの不具合を均等割りで直す** ※実装済み・実機での確認待ち（2026-11-26）
+  - 原因: `CraftingGridCache` が CPU を回す順番（`HashSet` の順）は毎 tick 同じ。網の予算を使い切ったあとに回ってくる CPU がいつも同じになり、ずっと遅いままだった。`minCoProcessorsWhenGridBusy=0` だと、AE2 が直近3 tick の使用数を引くので「3〜4 tick に1パターン」まで落ちていた。
+  - 直し方: 網の予算（`sharedMillisPerGrid`）を、**前の tick に動いた CPU の数で均等に割った持ち分**を各 CPU の目標時間にする。使い切らなかった CPU の余りは、足りなかった CPU（許された回数を使い切った CPU）で分ける。持ち分は前の tick の集計で決めるので、回る順番に左右されない。
+  - 各 CPU の目標時間は `targetMillisPerCpu` と持ち分の小さいほう。持ち分のほうが小さいときは、cap の下限を `minCoProcessors` ではなく `minCoProcessorsWhenGridBusy` にする（CPU が多いときに合計が予算を大きく超えないように）。
+  - `throttleCpu=false` でも `sharedGridBudget=true` なら、持ち分を目標にした cap の自動調整が動く。
+  - 緊急停止: それでも網が予算の2倍を使った tick は、残りの CPU を `minCoProcessorsWhenGridBusy` に抑える。ただし**前の tick に止められた CPU は止めない**（同じ CPU が続けて後回しにならない）。止められた tick は cap を動かさない。
+  - 実装: `CraftingGridCacheMixin`（tick の頭で前の tick の集計を保存、`getShareNanos`）、`CraftingCPUClusterMixin`（`executeCrafting` の HEAD で「動いた」印、RETURN で集計に入れる）
+  - `// 要ローカル検証`:
+    - CPU を3つ以上同じ網に置き、同時に大きなジョブを流す。CPU の GUI で、どの CPU も同じくらいの速さで進むこと（以前は特定の CPU だけ極端に遅かった）。
+    - 予算を小さく（例: `sharedMillisPerGrid=2`）して同じことをし、spark で `CraftingGridCache.onUpdateTick` が予算付近に収まること。
+- [x] **候補A：埋まっている送り先を tick 内で覚える**（`crafting.cacheBusyMediums`、既定オン）※実装済み・実機での確認待ち（2026-11-26）
+  - `executeCrafting` の `ICraftingMedium.isBusy()` を `@WrapOperation`。「埋まっている」という答えだけを、その tick の間、**網ごと**に覚える（同じ網のほかのパターン・ほかの CPU は聞き直さない）。「空いている」は覚えない（パターンを送ると埋まるため）。
+  - 覚えるのは `CraftingGridCache.onUpdateTick` の中だけ。tick の頭と終わりで空にする。
+  - 結果が元と変わりうるのは、tick の途中で送り先が空く場合だけ（次の tick から使われる）。CPU の処理中に送り先が空くことは普通ないので、実質同じ。
+  - AE2Enhanced との関係: AE2Enhanced も `isBusy` を `@WrapOperation`（送るのに失敗した送り先を数 tick「埋まっている」扱いにする）し、`DualityInterface.isBusy` の結果を tick ごとに覚えている。重ねがけで動く。AE2Enhanced の「失敗した送り先」は CPU ごとだが、こちらが内側・外側どちらになっても、その tick の間ほかの CPU からも埋まっている扱いになることがある（同じ tick の中だけなので実害は小さい見込み）。
+- [x] **候補C：送り先が全部埋まっているパターンは材料チェックをしない**（`crafting.skipCraftCheckWhenAllBusy`、既定オン）※実装済み・実機での確認待ち（2026-11-26）
+  - `executeCrafting` は、送り先を見る**前に** `canCraft`（材料のシミュレート取り出し）をする。さらに1つ送れるたびに全パターンを最初から回し直すので、送り先が埋まっているパターンの `canCraft` が何度も無駄に走る。
+  - `canCraft` を `@WrapOperation` し、そのパターンの送り先（`getMediums`）が**すべて**候補Aで「埋まっている」と分かっていれば、`canCraft` を呼ばずに false を返す。元の処理でも何も送られないので結果は同じ（違いは `visitedMediums` の列が回されないことだけ）。
+  - 1パターンあたりの時間が減るので、同じ時間予算でより多く送れる（＝軽さを保ったまま速くなる）。
+  - **AE2Enhanced があるときは自動でオフ**: AE2Enhanced は `canCraft` の失敗を「CPU の在庫が変わるまで」覚える（`CanCraftCacheService`）。こちらが内側で false を返すと材料不足として覚えられ、送り先が空いても止まったままになりうるため。起動ログに `AE2Enhanced found: crafting.skipCraftCheckWhenAllBusy is turned off` が出る。
+  - `// 要ローカル検証`: AE2Enhanced なしの環境で、ブロッキングモードのインターフェイスや PackagedAuto を使う大きなジョブが最後まで終わること（止まったままのパターンが出ないこと）。
+- [x] ~~**候補C の続き**: cap の戻し方を速くするか~~ → **やらない**（下の大量クラフト中の計測で、間引きはほぼ効いていなかったため）
+- [x] **CPU の状況画面の更新間隔を重さに合わせて変える**（`crafting.cpuGuiAdaptiveUpdate`、既定オン）※実装済み・実機での確認待ち（2026-11-26）
+  - AE2 は CPU の画面（`ContainerCraftingCPU`、それを継承するクラフト状況の画面も）を開いている間、変わったアイテムを毎 tick、GZIP で圧縮した3つのパケットにして送る。大量クラフト中の spark で 1.03%。
+  - 本人の希望: 普段は毎 tick（リアルタイムにクラフトしている感じを出したい）、重いときだけ5 tick ごと。
+  - 実装: `mixin/ContainerCraftingCPUMixin`。`detectAndSendChanges` の中の `IItemList.isEmpty()` を `@WrapOperation` し、待っている間は true に見せる。一覧はリセットされずにたまり、送るときに最新の数をまとめて送るので取りこぼしはない。予想時間などの @GuiSync は毎 tick のまま。
+  - 遅くする条件（どちらか）: 1回の送信が1 tick あたりに直して `cpuGuiSlowSendMicros`（既定 500µs）以上、またはサーバーの直近100 tick の平均 MSPT が `cpuGuiSlowMspt`（既定 40ms）以上。遅いときの間隔は `cpuGuiSlowInterval`（既定 5）。mixin ごと外すのは `mixins.craftingCpuGui`。
+  - メソッド名は MCP 名（`detectAndSendChanges`）と SRG 名（`func_75142_b`）の両方を書いている。
+  - 他の Mod: AE2Enhanced（`MixinContainerCraftingCPUThrottle`）も同じ `isEmpty()` を `@WrapOperation`（待っている数が多いときに間引く）。重ねがけで動く。CrazyAE はクラフト状況の画面の `detectAndSendChanges` を `@Overwrite` しているが、最後に `super` を呼ぶので通る。
+  - `// 要ローカル検証`:
+    - 開発環境と本番の jar の両方で、起動ログに `ContainerCraftingCPUMixin` の適用失敗が出ないこと（MCP 名と SRG 名の両方を書いた方式で当たるか）。`ServerLoad` の `tickTimeArray` / `getTickCounter` が本番で動くこと。
+    - 大量クラフト中に CPU の画面を開いて、普段は数字がなめらかに動くこと。`cpuGuiSlowMspt=1` にすると5 tick ごとのカクカクした動きになること（条件が効いている確認）。
+    - 画面を閉じて開き直したとき、数字がずれていないこと。
+
+### 大量クラフト中の計測（2026-11-26、今回の変更を入れる前の opti 1.0.0）
+
+- 条件: Server thread、約713秒、4ms 間隔、TPS 20.0、MSPT 中央値 18.9〜20.2ms。AE2Enhanced・CrazyAE なし、NAE2 あり。
+- `CraftingGridCache.onUpdateTick` は、大量クラフト中の1分ごとの平均で **1 tick あたり 1.5〜3ms**（後半はクラフトが減って 0 に近づく）。網の予算（10ms）にも CPU ごとの目標（5ms）にも平均では届いておらず、**速さを決めているのは opti の間引きではなく、AE2 本来の上限（コプロセッサ数と直近3 tick の使用数）と送り先の空き**。
+- `executeCrafting` 2.63% の内訳: `pushPattern`（NAE2 のラップ込み）0.73%、`isBusy` 0.45%（インターフェイス 0.29%・Packager 0.16%）、`canCraft` 0.36%、`visitedMediums` まわり（HashMap・stream・`getMediums`）約0.38%、`AEItemStack.fromItemStack` 0.16%。
+- `ContainerCraftingCPU.detectAndSendChanges` 1.03%（画面を開いていたため）。
+- 次の候補（未着手）: `visitedMediums` まわり（約0.38%）。ループの中で `visitedMediums.get(details)` を何度も呼んでいて、パターンのハッシュ計算が重い。
+
+### 大量クラフト中の計測 その2（2026-11-26、後回し修正・A・C・CPU 画面を入れた版）
+
+- 条件: 本番の Nomi-CEu（AE2UEL v0.56.6、Better P2P 1.3.2、AE2Enhanced なし）、Server thread、約591秒、TPS 20.0、MSPT 中央値 21.0ms。
+- クラフトの量が前回より多い（`pushPattern` 0.73% → 1.14%）。なので `pushPattern` 1回あたりで比べる。
+- `executeCrafting` 4.12%。`pushPattern` に対する比は前回と同じ約3.6倍で、**1パターンあたりの重さは減っていなかった**。
+  - **A（isBusy のキャッシュ）は効いた**: `isBusy` 0.27%（前回 0.45%）。`pushPattern` 1回あたりでは 0.62 → 0.24 に減った。
+  - **C は逆に重くなっていた**: `skipCanCraftWhenAllBusy` 全体で 1.36%。中身は `canCraft` 本体 0.44% に対し、**こちらが呼んだ `CraftingGridCache.getMediums` が 0.79%**。パターンを鍵にしたハッシュ表を引くたびに、パターンの `hashCode` / `equals` が走るのが原因（PackagedAuto の `PackageCraftingPatternHelper.hashCode` 0.33%、`PatternHelper.equals` 0.19%）。
+  - → **修正（2026-11-26）**: パターン → 送り先の一覧を、同じオブジェクトかどうかで引く `IdentityHashMap` にキャッシュする（`CraftingGridCache` ごと、`recalculateCraftingPatterns` の頭と終わりで空にする、4096件を超えたら空にする）。`getMediums` は同じパターンについて、パターンが組み直されるまで1回しか呼ばれなくなる。`// 要ローカル検証`: 再計測で `getMediums` がほぼ消えること。パターンを追加・削除したあと、新しいパターンも普通に動くこと。
+- CPU 画面: `ContainerCraftingStatus` 0.44%（前回 1.10%）、`ContainerCraftingCPU` 0.39%（前回 1.03%）。画面を開いていた時間が違うので参考値だが、6割くらい減っている。
+- AE2UEL v0.56.6 と v0.56.7 で、`CraftingCPUCluster`・`ContainerCraftingCPU`・`recalculateCraftingPatterns` のソースは同じ（差分なし）。
+
+### 大量クラフト中の計測 その3（2026-11-26、getMediums のキャッシュを入れた版）
+
+- 条件: 本番の Nomi-CEu、Server thread、約210秒（短め）、TPS 20.0、MSPT 中央値 21.4ms。クラフト量はさらに多い（`pushPattern` 1.71%）。
+- **`executeCrafting` ÷ `pushPattern` が 3.6倍 → 2.57倍**（1パターンあたり約3割軽くなった）。
+  - C のラッパーのうち `getMediums` は消えた。オーバーヘッドは `isKnownBusy` の 0.12% だけ（`canCraft` 本体 0.55%）。
+  - `pushPattern` 1回あたり: `isBusy` 0.62 → 0.15、`canCraft`（C 込み）0.49 → 0.40。
+- 残り（次の候補）: `AEItemStack.fromItemStack` 0.24%、元の処理の `getMediums`（visitedMediums の補充）0.15%、`PatternHelper.isValidItemForSlot` 0.13%、`isKnownBusy` 0.12%。
+- 後回しの修正（均等割り）は spark では見えないので、ゲーム内で確認する（CPU を3つ以上並べて同時にジョブを流す）。
+- 今わかっている重なり（追加分）:
+  - AE2Enhanced: `isBusy`（PushCooldown）・`canCraft`（CanCraft・Special の2つ）・`pushPattern`（複数）・`getMediums`（`@Redirect`、メモ化）・`updateCraftingLogic` の HEAD を触っている。opti が触る `accelerator` の読み出しと `executeCrafting` の HEAD には重なりなし。
+  - CrazyAE: `CraftingGridCache.onUpdateTick` の TAIL に `@Inject`（10 tick ごとに CPU 一覧を作り直す）。opti の HEAD／RETURN とは別の場所。
+  - NAE2: `executeCrafting` の HEAD／RETURN に `@Inject`、`pushPattern` を `@WrapOperation`。重なりなし。
+- [ ] busy だったインターフェースや Packager を、同じ tick の中で再判定しないようにキャッシュできないか検討します。→ 候補A で対応
 
 ## 優先度3：AE2 Fluid Crafting の Fluid Level Maintainer（4.1%）
 

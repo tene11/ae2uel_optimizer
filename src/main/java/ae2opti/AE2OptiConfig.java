@@ -82,8 +82,12 @@ public class AE2OptiConfig {
 
         @Config.Comment({
                 "Share a time budget between all crafting CPUs on the same ME network.",
-                "Once the network has used sharedMillisPerGrid in a tick, the remaining CPUs only push",
-                "minCoProcessorsWhenGridBusy (+1) patterns until the next tick.",
+                "The budget (sharedMillisPerGrid) is split evenly between the CPUs that are crafting.",
+                "Time left over by CPUs that did not need their share goes to the CPUs that did.",
+                "The share is decided from the previous tick, so the order AE2 visits the CPUs no longer matters",
+                "(before, the same CPUs were always the ones slowed down).",
+                "If a network still uses more than twice its budget in a tick, the remaining CPUs push only",
+                "minCoProcessorsWhenGridBusy (+1) patterns, but never the same CPU two ticks in a row.",
                 "Needs mixins.craftingCpuCluster and mixins.craftingGridCache."
         })
         public boolean sharedGridBudget = true;
@@ -92,9 +96,54 @@ public class AE2OptiConfig {
         @Config.RangeInt(min = 1, max = 50)
         public int sharedMillisPerGrid = 10;
 
-        @Config.Comment("Effective co-processors for a CPU after its network has used up the shared budget. 0 = AE2's minimum (1 pattern).")
+        @Config.Comment({
+                "Lowest effective co-processors for a CPU whose speed is limited by its share of the network budget",
+                "(used instead of minCoProcessors), and the limit for the over-budget emergency stop.",
+                "0 = AE2's minimum (1 pattern)."
+        })
         @Config.RangeInt(min = 0)
         public int minCoProcessorsWhenGridBusy = 0;
+
+        @Config.Comment({
+                "Remember crafting targets (interfaces, PackagedAuto machines, ...) that answered 'busy' for the rest of the tick,",
+                "and do not ask them again from other patterns or CPUs on the same ME network.",
+                "Only 'busy' answers are remembered. A target that frees up in the middle of a tick is used from the next tick.",
+                "Needs mixins.craftingCpuCluster and mixins.craftingGridCache."
+        })
+        public boolean cacheBusyMediums = true;
+
+        @Config.Comment({
+                "Skip the material check (canCraft) of a pattern when every target for it is already known to be busy this tick.",
+                "Nothing could be pushed anyway, so the result is the same as vanilla AE2UEL.",
+                "Needs crafting.cacheBusyMediums.",
+                "Turned off automatically while AE2Enhanced is installed (it caches canCraft failures,",
+                "and a skipped check could be taken as a material shortage)."
+        })
+        public boolean skipCraftCheckWhenAllBusy = true;
+
+        @Config.Comment({
+                "Crafting CPU status screens (the CPU screen and the Crafting Status screen) normally send changes every tick.",
+                "With this on, they still update every tick, but after a heavy update (see cpuGuiSlowSendMicros)",
+                "or while the server is busy (see cpuGuiSlowMspt) they wait cpuGuiSlowInterval ticks before the next one.",
+                "Changes are collected while waiting, so nothing is lost; the numbers just update less often.",
+                "Needs mixins.craftingCpuGui."
+        })
+        public boolean cpuGuiAdaptiveUpdate = true;
+
+        @Config.Comment("Ticks between status screen updates while things are heavy. 1 = always every tick.")
+        @Config.RangeInt(min = 1, max = 40)
+        public int cpuGuiSlowInterval = 5;
+
+        @Config.Comment({
+                "Slow down when one status screen update costs at least this many microseconds per tick. 0 = ignore this check.",
+                "(1000 microseconds = 1 ms; a whole tick is 50 ms.)"
+        })
+        @Config.RangeInt(min = 0)
+        public int cpuGuiSlowSendMicros = 500;
+
+        @Config.Comment("Slow down while the server's average MSPT (last 100 ticks) is at least this many ms. 0 = ignore this check.")
+        @Config.RangeInt(min = 0, max = 1000)
+        public int cpuGuiSlowMspt = 40;
     }
 
     public static class P2P {
@@ -271,13 +320,17 @@ public class AE2OptiConfig {
         @Config.RequiresMcRestart
         public boolean energyGridCache = true;
 
-        @Config.Comment("CraftingCPUCluster: crafting.throttleCpu and crafting.sharedGridBudget.")
+        @Config.Comment("CraftingCPUCluster: crafting.throttleCpu, crafting.sharedGridBudget, crafting.cacheBusyMediums and crafting.skipCraftCheckWhenAllBusy.")
         @Config.RequiresMcRestart
         public boolean craftingCpuCluster = true;
 
-        @Config.Comment("CraftingGridCache: the per-network time budget used by crafting.sharedGridBudget.")
+        @Config.Comment("CraftingGridCache: the per-network budget and busy-target memory used by crafting.sharedGridBudget and crafting.cacheBusyMediums.")
         @Config.RequiresMcRestart
         public boolean craftingGridCache = true;
+
+        @Config.Comment("ContainerCraftingCPU: crafting.cpuGuiAdaptiveUpdate (status screen update interval).")
+        @Config.RequiresMcRestart
+        public boolean craftingCpuGui = true;
 
         @Config.Comment({
                 "GridConnection: merge detection for debug.fiberCrosstalk.",

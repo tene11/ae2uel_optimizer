@@ -19,9 +19,19 @@ public class AE2Opti {
 
     public static final Logger LOGGER = LogManager.getLogger(Tags.MOD_NAME);
 
+    /**
+     * AE2Enhanced が入っているか（preInit で決まる）。
+     * AE2Enhanced は canCraft の失敗を覚えるので、crafting.skipCraftCheckWhenAllBusy はこれが true のとき働かない。
+     */
+    public static boolean ae2EnhancedLoaded = false;
+
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
         LOGGER.info("{} loaded", Tags.MOD_NAME);
+        ae2EnhancedLoaded = Loader.isModLoaded("ae2enhanced");
+        if (ae2EnhancedLoaded && AE2OptiConfig.crafting.skipCraftCheckWhenAllBusy) {
+            LOGGER.info("AE2Enhanced found: crafting.skipCraftCheckWhenAllBusy is turned off (AE2Enhanced caches canCraft failures).");
+        }
     }
 
     @Mod.EventHandler
