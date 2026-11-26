@@ -1,4 +1,4 @@
-commands.ae2opti.usage=/ae2opti <fibercheck|ghostcheck>
+commands.ae2opti.usage=/ae2opti <fibercheck|ghostcheck|energylinks>
 commands.ae2opti.fibercheck.disabled=fibercheck is disabled. Set debug.fiberCrosstalk=true in config/ae2uel_optimizer.cfg to use it.
 commands.ae2opti.fibercheck.result=Checked %s networks (%s quartz fibers): %s crosstalk(s) found.
 commands.ae2opti.fibercheck.entry= - Fiber at %s: inner and outer side are on the same network (%s nodes)
@@ -14,3 +14,12 @@ commands.ae2opti.ghostcheck.reason.world_unloaded=dimension was unloaded
 commands.ae2opti.ghostcheck.reason.invalid=tile was removed
 commands.ae2opti.ghostcheck.reason.chunk_unloaded=chunk is not loaded
 commands.ae2opti.ghostcheck.reason.replaced=a different tile is at that position now
+commands.ae2opti.energylinks.groups=Checked %s networks: %s of them are linked through quartz fibers, in %s group(s) (largest: %s networks).
+commands.ae2opti.energylinks.unsupported=%s group(s) are linked by something other than quartz fibers; energy.linkedGridCache uses AE2's own search for them.
+commands.ae2opti.energylinks.orphans=%s network(s) are reachable through quartz fibers but are not in AE2's network list (see the server log).
+commands.ae2opti.energylinks.entries=Fiber entries in energy grids: %s (distinct: %s). Extra: %s, stale (no node on that network): %s, missing: %s.
+commands.ae2opti.energylinks.entry= - %s on a network with %s nodes: registered %s time(s), expected %s
+commands.ae2opti.energylinks.more= ...and %s more (see the server log)
+commands.ae2opti.energylinks.rebuilds.first=Since the server started: link list rebuilt %s time(s), %s entries visited, fibers joined/left %s time(s). Run again later to see the rate.
+commands.ae2opti.energylinks.rebuilds=Since the last check (%s ticks): link list rebuilt %s time(s), %s entries visited, fibers joined/left %s time(s).
+commands.ae2opti.energylinks.timing=Average time: %s µs per rebuild, sorted %s time(s) at %s µs each. Per tick (rebuild + sort): %s µs.

@@ -1,4 +1,4 @@
-commands.ae2opti.usage=/ae2opti <fibercheck|ghostcheck>
+commands.ae2opti.usage=/ae2opti <fibercheck|ghostcheck|energylinks>
 commands.ae2opti.fibercheck.disabled=fibercheck は無効です。config/ae2uel_optimizer.cfg で debug.fiberCrosstalk=true にすると使えます。
 commands.ae2opti.fibercheck.result=%s 個の網（石英ファイバー %s 本）を調べました：混線 %s 件
 commands.ae2opti.fibercheck.entry= - %s のファイバー：内側と外側が同じ網に入っています（ノード数 %s）
@@ -14,3 +14,12 @@ commands.ae2opti.ghostcheck.reason.world_unloaded=ディメンションがアン
 commands.ae2opti.ghostcheck.reason.invalid=タイルは撤去済みです
 commands.ae2opti.ghostcheck.reason.chunk_unloaded=チャンクが読み込まれていません
 commands.ae2opti.ghostcheck.reason.replaced=その場所には別のタイルがあります
+commands.ae2opti.energylinks.groups=%s 個の網を調べました：そのうち %s 個が石英ファイバーでつながっていて、まとまりは %s 個（いちばん大きいもので %s 個の網）
+commands.ae2opti.energylinks.unsupported=%s 個のまとまりは石英ファイバー以外のものでつながっています（energy.linkedGridCache は AE2 の元の探索を使います）
+commands.ae2opti.energylinks.orphans=石英ファイバーの先にあるのに AE2 の網の一覧に無い網が %s 個あります（サーバーログを見てください）
+commands.ae2opti.energylinks.entries=網のファイバーの登録：合計 %s 回（重複を除くと %s 本）。余分 %s 回、古い登録（その網にノードが無い）%s 回、登録漏れ %s 回
+commands.ae2opti.energylinks.entry= - %s（網のノード数 %s）：%s 回登録されています（本来は %s 回）
+commands.ae2opti.energylinks.more= …ほか %s 件（サーバーログを見てください）
+commands.ae2opti.energylinks.rebuilds.first=サーバー起動後：一覧の作り直し %s 回、たどった数 %s、ファイバーの出入り %s 回。しばらくしてもう一度実行すると、1tick あたりの回数が分かります
+commands.ae2opti.energylinks.rebuilds=前回の確認から（%s tick）：一覧の作り直し %s 回、たどった数 %s、ファイバーの出入り %s 回
+commands.ae2opti.energylinks.timing=平均時間：作り直し1回 %s µs、並べ替え %s 回（1回 %s µs）。1tick あたり（作り直し＋並べ替え）%s µs

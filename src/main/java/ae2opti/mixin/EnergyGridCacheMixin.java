@@ -2,18 +2,24 @@ package ae2opti.mixin;
 
 import appeng.api.config.Actionable;
 import appeng.api.config.PowerMultiplier;
+import appeng.api.networking.IGridHost;
+import appeng.api.networking.IGridNode;
 import appeng.api.networking.energy.IAEPowerStorage;
 import appeng.api.networking.energy.IEnergyGridProvider;
 import appeng.me.cache.EnergyGridCache;
 import ae2opti.AE2OptiConfig;
+import ae2opti.energy.EnergyLinkHolder;
+import ae2opti.energy.EnergyLinks;
 import com.google.common.collect.Multiset;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Comparator;
@@ -44,12 +50,17 @@ import java.util.function.Predicate;
  * AE2UEL で IEnergyGridProvider を実装しているのは石英ファイバーだけで、その getProviderStoredEnergy は 0 を返すだけなので結果は変わらない。
  * spark では extractAEPower の 2.2% がこのキュー追加（PriorityQueue.add）だった。</p>
  *
+ * <p>(1-B) 自分の網で足りなかったときの探索は、energy.linkedGridCache がオンなら {@link EnergyLinks} を使う。
+ * つながった網の一覧を tick ごとに1回だけ作って使い回し、呼び出しごとに1回だけ並べて順番に処理する。
+ * 一覧は、どこかの網でファイバーが addNode / removeNode されたとき（ここで {@link EnergyLinks#onProviderChanged()} を呼ぶ）
+ * と、tick が変わったときに作り直す。ファイバー以外のつながりがある網では、元と同じ探索に戻る。</p>
+ *
  * (2) extractProviderPower / injectProviderPower は呼ばれるたびに
  * providers.removeIf(providerToRemove::contains) で全ストレージを走査する。
  * 削除予定が空なら結果は変わらないので、走査ごと飛ばす。
  */
 @Mixin(value = EnergyGridCache.class, remap = false)
-public abstract class EnergyGridCacheMixin {
+public abstract class EnergyGridCacheMixin implements EnergyLinkHolder {
 
     @Shadow
     @Final
@@ -71,10 +82,103 @@ public abstract class EnergyGridCacheMixin {
     @Final
     private static Comparator<IEnergyGridProvider> COMPARATOR_HIGHEST_AMOUNT_STORED_FIRST;
 
+    /** [1-B] この網が入っている「つながった網の一覧」。同じ一覧の網はすべて同じオブジェクトを持つ */
+    @Unique
+    private EnergyLinks.Component ae2opti$links;
+
+    @Override
+    public EnergyLinks.Component ae2opti$getLinks() {
+        return this.ae2opti$links;
+    }
+
+    @Override
+    public void ae2opti$setLinks(EnergyLinks.Component links) {
+        this.ae2opti$links = links;
+    }
+
+    @Override
+    public Multiset<IEnergyGridProvider> ae2opti$providerMultiset() {
+        return this.energyGridProviders;
+    }
+
+    // ---- [1-B] energy.linkedGridTickOrder の「この tick は満タン／空」の印 ----
+
+    /** 印が付いていないことを表す値（サーバーの tick 数は int なので、long の最小値とは重ならない） */
+    @Unique
+    private static final long AE2OPTI$NO_MARK = Long.MIN_VALUE;
+
+    @Unique
+    private long ae2opti$fullTick = AE2OPTI$NO_MARK;
+
+    @Unique
+    private long ae2opti$emptyTick = AE2OPTI$NO_MARK;
+
+    @Override
+    public boolean ae2opti$isFull(int tick) {
+        return this.ae2opti$fullTick == tick;
+    }
+
+    @Override
+    public void ae2opti$markFull(int tick) {
+        this.ae2opti$fullTick = tick;
+    }
+
+    @Override
+    public boolean ae2opti$isEmpty(int tick) {
+        return this.ae2opti$emptyTick == tick;
+    }
+
+    @Override
+    public void ae2opti$markEmpty(int tick) {
+        this.ae2opti$emptyTick = tick;
+    }
+
+    /** この網から電力が取り出されたら、空きができたので「満タン」の印を外す */
+    @Inject(method = "extractProviderPower", at = @At("RETURN"))
+    private void ae2opti$clearFullMark(double amt, Actionable mode, CallbackInfoReturnable<Double> cir) {
+        if (mode == Actionable.MODULATE && cir.getReturnValue() > 0) {
+            this.ae2opti$fullTick = AE2OPTI$NO_MARK;
+        }
+    }
+
+    /**
+     * この網に電力が入れられようとしたら「空」の印を外す。
+     * injectProviderPower は引数の amt を途中で書き換えるので、RETURN では受け取った量が分からない。
+     * そのため HEAD で、入るかどうかに関係なく外す（外しすぎても、1回余分に聞くだけで結果は変わらない）。
+     */
+    @Inject(method = "injectProviderPower", at = @At("HEAD"))
+    private void ae2opti$clearEmptyMark(double amt, Actionable mode, CallbackInfoReturnable<Double> cir) {
+        if (mode == Actionable.MODULATE && amt > 0) {
+            this.ae2opti$emptyTick = AE2OPTI$NO_MARK;
+        }
+    }
+
+    // ---- [1-B] ファイバーの出入りで一覧を古くする（ノードの出入りで満タン・空の印も外す） ----
+
+    @Inject(method = "addNode", at = @At("HEAD"))
+    private void ae2opti$onAddNode(IGridNode node, IGridHost machine, CallbackInfo ci) {
+        this.ae2opti$fullTick = AE2OPTI$NO_MARK;
+        this.ae2opti$emptyTick = AE2OPTI$NO_MARK;
+        if (machine instanceof IEnergyGridProvider) {
+            EnergyLinks.onProviderChanged();
+        }
+    }
+
+    @Inject(method = "removeNode", at = @At("HEAD"))
+    private void ae2opti$onRemoveNode(IGridNode node, IGridHost machine, CallbackInfo ci) {
+        this.ae2opti$fullTick = AE2OPTI$NO_MARK;
+        this.ae2opti$emptyTick = AE2OPTI$NO_MARK;
+        if (machine instanceof IEnergyGridProvider) {
+            EnergyLinks.onProviderChanged();
+        }
+    }
+
+    // ---- 取り出し ----
+
     @Inject(method = "extractAEPower", at = @At("HEAD"), cancellable = true)
     private void ae2opti$extractFastPath(double amt, Actionable mode, PowerMultiplier pm,
                                             CallbackInfoReturnable<Double> cir) {
-        if (!AE2OptiConfig.energy.fastPath) {
+        if (!AE2OptiConfig.energy.fastPath && !AE2OptiConfig.energy.linkedGridCache) {
             return;
         }
         final EnergyGridCache self = (EnergyGridCache) (Object) this;
@@ -94,7 +198,22 @@ public abstract class EnergyGridCacheMixin {
             return;
         }
 
+        // [1-B] つながった網の一覧（tick ごとにキャッシュ）を保有量の多い順に回す
+        if (AE2OptiConfig.energy.linkedGridCache) {
+            final EnergyLinks.Component links = EnergyLinks.get(self);
+            if (links != null) {
+                cir.setReturnValue(pm.divide(EnergyLinks.extractOthers(self, links, extracted, toExtract, mode)));
+                return;
+            }
+        }
+
         // 足りなかったときだけ、元の処理の続き（自分を訪問済みにした状態から）を同じ手順で行う。
+        cir.setReturnValue(pm.divide(this.ae2opti$extractSearch(self, extracted, toExtract, mode)));
+    }
+
+    /** 元の extractAEPower の探索の続き（自分は訪問済み） */
+    @Unique
+    private double ae2opti$extractSearch(EnergyGridCache self, double extracted, double toExtract, Actionable mode) {
         final Queue<IEnergyGridProvider> toVisit = new PriorityQueue<>(COMPARATOR_HIGHEST_AMOUNT_STORED_FIRST);
         final Set<IEnergyGridProvider> visited = new HashSet<>();
         visited.add(self);
@@ -114,13 +233,14 @@ public abstract class EnergyGridCacheMixin {
                 }
             }
         }
-
-        cir.setReturnValue(pm.divide(extracted));
+        return extracted;
     }
+
+    // ---- 需要の問い合わせ ----
 
     @Inject(method = "getEnergyDemand", at = @At("HEAD"), cancellable = true)
     private void ae2opti$demandFastPath(double maxRequired, CallbackInfoReturnable<Double> cir) {
-        if (!AE2OptiConfig.energy.fastPath) {
+        if (!AE2OptiConfig.energy.fastPath && !AE2OptiConfig.energy.linkedGridCache) {
             return;
         }
         final EnergyGridCache self = (EnergyGridCache) (Object) this;
@@ -139,6 +259,21 @@ public abstract class EnergyGridCacheMixin {
             return;
         }
 
+        // [1-B] つながった網の一覧（tick ごとにキャッシュ）を充電率の低い順に回す
+        if (AE2OptiConfig.energy.linkedGridCache) {
+            final EnergyLinks.Component links = EnergyLinks.get(self);
+            if (links != null) {
+                cir.setReturnValue(EnergyLinks.demandOthers(self, links, required, maxRequired));
+                return;
+            }
+        }
+
+        cir.setReturnValue(this.ae2opti$demandSearch(self, required, maxRequired));
+    }
+
+    /** 元の getEnergyDemand の探索の続き（自分は訪問済み） */
+    @Unique
+    private double ae2opti$demandSearch(EnergyGridCache self, double required, double maxRequired) {
         final Queue<IEnergyGridProvider> toVisit = new PriorityQueue<>(COMPARATOR_LOWEST_PERCENTAGE_FIRST);
         final Set<IEnergyGridProvider> visited = new HashSet<>();
         visited.add(self);
@@ -158,13 +293,14 @@ public abstract class EnergyGridCacheMixin {
                 }
             }
         }
-
-        cir.setReturnValue(required);
+        return required;
     }
+
+    // ---- 注入 ----
 
     @Inject(method = "injectPower", at = @At("HEAD"), cancellable = true)
     private void ae2opti$injectFastPath(double amt, Actionable mode, CallbackInfoReturnable<Double> cir) {
-        if (!AE2OptiConfig.energy.fastPath) {
+        if (!AE2OptiConfig.energy.fastPath && !AE2OptiConfig.energy.linkedGridCache) {
             return;
         }
         final EnergyGridCache self = (EnergyGridCache) (Object) this;
@@ -183,7 +319,22 @@ public abstract class EnergyGridCacheMixin {
             return;
         }
 
+        // [1-B] つながった網の一覧（tick ごとにキャッシュ）を充電率の低い順に回す
+        if (AE2OptiConfig.energy.linkedGridCache) {
+            final EnergyLinks.Component links = EnergyLinks.get(self);
+            if (links != null) {
+                cir.setReturnValue(EnergyLinks.injectOthers(self, links, leftover, mode));
+                return;
+            }
+        }
+
         // 余りが出たときだけ、元の処理の続き（自分を訪問済みにした状態から）を同じ手順で行う。
+        cir.setReturnValue(this.ae2opti$injectSearch(self, leftover, mode));
+    }
+
+    /** 元の injectPower の探索の続き（自分は訪問済み） */
+    @Unique
+    private double ae2opti$injectSearch(EnergyGridCache self, double leftover, Actionable mode) {
         final Queue<IEnergyGridProvider> toVisit = new PriorityQueue<>(COMPARATOR_LOWEST_PERCENTAGE_FIRST);
         final Set<IEnergyGridProvider> visited = new HashSet<>();
         visited.add(self);
@@ -203,9 +354,10 @@ public abstract class EnergyGridCacheMixin {
                 }
             }
         }
-
-        cir.setReturnValue(leftover);
+        return leftover;
     }
+
+    // ---- (2) removeIf の空振りを飛ばす ----
 
     @WrapOperation(method = "extractProviderPower",
             at = @At(value = "INVOKE", target = "Ljava/util/Set;removeIf(Ljava/util/function/Predicate;)Z"))

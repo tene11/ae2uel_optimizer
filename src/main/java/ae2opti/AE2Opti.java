@@ -2,6 +2,7 @@ package ae2opti;
 
 import ae2opti.command.CommandAE2Opti;
 import ae2opti.debug.FiberCrosstalkDetector;
+import ae2opti.energy.EnergyLinkChecker;
 import ae2opti.ghost.GhostNodeGuard;
 import ae2opti.p2p.P2PTickHandler;
 import net.minecraftforge.fml.common.Loader;
@@ -51,6 +52,7 @@ public class AE2Opti {
     @Mod.EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
         FiberCrosstalkDetector.reset();
+        EnergyLinkChecker.reset();
         GhostNodeGuard.reset();
         P2PTickHandler.clear();
     }

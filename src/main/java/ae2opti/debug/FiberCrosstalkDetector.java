@@ -306,7 +306,7 @@ public final class FiberCrosstalkDetector {
     }
 
     /** ファイバーなどパーツの座標と向き。取れなければクラス名だけ返す。 */
-    static String describeHost(IGridHost host) {
+    public static String describeHost(IGridHost host) {
         if (host instanceof AEBasePart) {
             final AEBasePart part = (AEBasePart) host;
             try {

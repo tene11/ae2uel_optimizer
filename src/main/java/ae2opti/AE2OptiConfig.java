@@ -57,6 +57,39 @@ public class AE2OptiConfig {
         public boolean fastPath = true;
 
         @Config.Comment({
+                "[1-B] When the grid's own storage was not enough and the grid is linked to other grids through",
+                "quartz fibers, use a list of the linked grids that is built once per tick (and rebuilt as soon as",
+                "a quartz fiber joins or leaves any grid), instead of walking the fibers with a PriorityQueue on",
+                "every call. The list is sorted once per call: lowest charge first for injection and demand,",
+                "most stored first for extraction. Each grid's stored power is read only once per call.",
+                "The total amount moved is the same as vanilla AE2UEL, but which linked grid gets (or gives)",
+                "power first can differ. If anything other than a quartz fiber links the grids, the vanilla",
+                "search is used instead. Needs mixins.energyGridCache."
+        })
+        public boolean linkedGridCache = true;
+
+        @Config.Comment({
+                "[1-B] With energy.linkedGridCache: sort the linked grids only once per tick instead of on every call,",
+                "and skip, for the rest of the tick, a linked grid that accepted nothing (full) or gave nothing (empty).",
+                "The mark is cleared as soon as power is taken out of (full) or put into (empty) that grid, or a node",
+                "joins or leaves it. Saves reading every linked grid's stored power (which recounts all its cells)",
+                "on every call. The order between linked grids uses their charge at the start of the tick.",
+                "The total amount moved is the same as vanilla AE2UEL, unless a linked grid's storage is emptied",
+                "in the middle of a tick without going through the ME network (it then takes power again next tick).",
+                "Needs mixins.energyGridCache."
+        })
+        public boolean linkedGridTickOrder = true;
+
+        @Config.Comment({
+                "[1-B] With energy.linkedGridCache: rebuild the list of linked grids at least every this many ticks.",
+                "The list is always rebuilt right away when a quartz fiber joins or leaves any network,",
+                "so this is only a safety net. 1 = rebuild every tick (the old behavior).",
+                "The order between linked grids and the full/empty marks are still renewed every tick."
+        })
+        @Config.RangeInt(min = 1, max = 200)
+        public int linkedGridRebuildInterval = 5;
+
+        @Config.Comment({
                 "Skip EnergyGridCache's removeIf scan when nothing is waiting to be removed.",
                 "Same result as vanilla AE2UEL; it only avoids iterating every power storage on each extract/inject.",
                 "Needs mixins.energyGridCache."
@@ -316,7 +349,7 @@ public class AE2OptiConfig {
      * ゲーム中に変えても次の起動まで反映されない。
      */
     public static class Mixins {
-        @Config.Comment("EnergyGridCache: energy.fastPath and energy.skipEmptyRemoval.")
+        @Config.Comment("EnergyGridCache: energy.fastPath, energy.linkedGridCache and energy.skipEmptyRemoval.")
         @Config.RequiresMcRestart
         public boolean energyGridCache = true;
 
