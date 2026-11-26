@@ -1,0 +1,16 @@
+commands.ae2opti.usage=/ae2opti <fibercheck|ghostcheck>
+commands.ae2opti.fibercheck.disabled=fibercheck は無効です。config/ae2uel_optimizer.cfg で debug.fiberCrosstalk=true にすると使えます。
+commands.ae2opti.fibercheck.result=%s 個の網（石英ファイバー %s 本）を調べました：混線 %s 件
+commands.ae2opti.fibercheck.entry= - %s のファイバー：内側と外側が同じ網に入っています（ノード数 %s）
+commands.ae2opti.fibercheck.more= …ほか %s 件（サーバーログを見てください）
+ae2opti.betterp2p.unknown_type=Better P2P はこの種類の P2P（%s）に対応していないため、ここではリンクできません。メモリーカードを使ってください。
+commands.ae2opti.ghostcheck.result=%s 個の網（ノード %s 個）を調べました：幽霊ノード %s 件
+commands.ae2opti.ghostcheck.entry= - %s（%s）：%s（網のノード数 %s）
+commands.ae2opti.ghostcheck.more= …ほか %s 件（サーバーログを見てください）
+commands.ae2opti.ghostcheck.unknown=持ち主がタイルでも AE2 のパーツでもないため、%s 個のノードは調べていません。
+commands.ae2opti.ghostcheck.prevented=サーバー起動後に防いだ幽霊ノード：%s 件
+commands.ae2opti.ghostcheck.reason.no_world=タイルにワールドがありません
+commands.ae2opti.ghostcheck.reason.world_unloaded=ディメンションがアンロード済みです
+commands.ae2opti.ghostcheck.reason.invalid=タイルは撤去済みです
+commands.ae2opti.ghostcheck.reason.chunk_unloaded=チャンクが読み込まれていません
+commands.ae2opti.ghostcheck.reason.replaced=その場所には別のタイルがあります

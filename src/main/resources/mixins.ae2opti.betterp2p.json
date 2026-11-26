@@ -1,0 +1,18 @@
+{
+  "package": "ae2opti.betterp2p.mixin",
+  "required": true,
+  "plugin": "ae2opti.AE2OptiMixinPlugin",
+  "refmap": "mixins.ae2opti.refmap.json",
+  "target": "@env(DEFAULT)",
+  "minVersion": "0.8.5",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [
+    "GridServerCacheMixin",
+    "P2PCacheAccessor"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

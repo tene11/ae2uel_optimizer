@@ -1,0 +1,16 @@
+commands.ae2opti.usage=/ae2opti <fibercheck|ghostcheck>
+commands.ae2opti.fibercheck.disabled=fibercheck is disabled. Set debug.fiberCrosstalk=true in config/ae2uel_optimizer.cfg to use it.
+commands.ae2opti.fibercheck.result=Checked %s networks (%s quartz fibers): %s crosstalk(s) found.
+commands.ae2opti.fibercheck.entry= - Fiber at %s: inner and outer side are on the same network (%s nodes)
+commands.ae2opti.fibercheck.more= ...and %s more (see the server log)
+ae2opti.betterp2p.unknown_type=Better P2P does not support this P2P type (%s), so it cannot be linked here. Use a memory card instead.
+commands.ae2opti.ghostcheck.result=Checked %s networks (%s nodes): %s ghost node(s) found.
+commands.ae2opti.ghostcheck.entry= - %s at %s: %s (network has %s nodes)
+commands.ae2opti.ghostcheck.more= ...and %s more (see the server log)
+commands.ae2opti.ghostcheck.unknown=%s node(s) were not checked because their owner is not a tile entity or an AE2 part.
+commands.ae2opti.ghostcheck.prevented=Ghost nodes prevented since the server started: %s
+commands.ae2opti.ghostcheck.reason.no_world=tile has no world
+commands.ae2opti.ghostcheck.reason.world_unloaded=dimension was unloaded
+commands.ae2opti.ghostcheck.reason.invalid=tile was removed
+commands.ae2opti.ghostcheck.reason.chunk_unloaded=chunk is not loaded
+commands.ae2opti.ghostcheck.reason.replaced=a different tile is at that position now
