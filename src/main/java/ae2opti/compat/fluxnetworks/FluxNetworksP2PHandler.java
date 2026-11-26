@@ -27,7 +27,8 @@ public final class FluxNetworksP2PHandler implements ITileEnergyHandler {
 
     /** {@code tile} の {@code side} の面にある P2P FE の入口（Flux Networks の面の向きは capability と同じ） */
     private static PartP2PFEPower inputAt(TileEntity tile, EnumFacing side) {
-        if (side == null || !(tile instanceof IPartHost) || tile.isInvalid()) {
+        // mixin が当たっていない・p2p.newDistribution がオフなら、Flux Networks の普通の FE の受け渡しに任せる
+        if (side == null || !FEP2PDistributor.isAvailable() || !(tile instanceof IPartHost) || tile.isInvalid()) {
             return null;
         }
         final IPart part = ((IPartHost) tile).getPart(side);

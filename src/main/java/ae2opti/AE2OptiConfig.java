@@ -52,6 +52,7 @@ public class AE2OptiConfig {
                 "When the grid is linked to other grids (for example through quartz fibers), injectPower,",
                 "extractAEPower and getEnergyDemand try the grid's own storage first, and only search the",
                 "linked grids when that was not enough. Same result as vanilla AE2UEL.",
+                "Turn this off to use vanilla AE2UEL's code as is (energy.linkedGridCache then does nothing).",
                 "Needs mixins.energyGridCache."
         })
         public boolean fastPath = true;
@@ -64,7 +65,7 @@ public class AE2OptiConfig {
                 "most stored first for extraction. Each grid's stored power is read only once per call.",
                 "The total amount moved is the same as vanilla AE2UEL, but which linked grid gets (or gives)",
                 "power first can differ. If anything other than a quartz fiber links the grids, the vanilla",
-                "search is used instead. Needs mixins.energyGridCache."
+                "search is used instead. Needs energy.fastPath and mixins.energyGridCache."
         })
         public boolean linkedGridCache = true;
 
@@ -271,14 +272,16 @@ public class AE2OptiConfig {
 
         @Config.Comment({
                 "[long] Let Flux Networks hand long amounts to FE P2P inputs (instead of cutting them to int).",
-                "Only used when Flux Networks is installed. Requires a game restart."
+                "Only used when Flux Networks is installed. Needs mixins.p2pFePower and p2p.newDistribution",
+                "(otherwise Flux Networks hands FE the normal int way). Requires a game restart."
         })
         @Config.RequiresMcRestart
         public boolean fluxNetworksLongInput = true;
 
         @Config.Comment({
                 "[long] Let Draconic Evolution pylons in output mode hand long amounts to an adjacent FE P2P input",
-                "(instead of cutting the core's energy to int). Needs mixins.draconicEvolution."
+                "(instead of cutting the core's energy to int).",
+                "Needs mixins.draconicEvolution, mixins.p2pFePower and p2p.newDistribution."
         })
         public boolean draconicPylonLongOutput = true;
 

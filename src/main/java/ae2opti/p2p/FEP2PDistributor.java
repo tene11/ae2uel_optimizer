@@ -47,7 +47,23 @@ public final class FEP2PDistributor {
 
     private static final String AE_FORGE_ENERGY_ADAPTER = "appeng.tile.powersink.ForgeEnergyAdapter";
 
+    /**
+     * {@code PartP2PFEPowerMixin} が当たっているか（{@code mixins.p2pFePower=false} や適用失敗なら false）。
+     * false のときに {@link #state} でキャストすると ClassCastException になる。
+     * このクラスが初めて使われるのはゲーム中（late mixin の適用後）なので、ここで決めてよい。
+     */
+    private static final boolean MIXIN_APPLIED = FEP2PState.class.isAssignableFrom(PartP2PFEPower.class);
+
     private FEP2PDistributor() {
+    }
+
+    /**
+     * ほかの Mod（Flux Networks・DE のパイロンなど）から {@link #distribute} を呼んでよいか。
+     * mixin が当たっていて、{@code p2p.newDistribution} がオンのときだけ true。
+     * false なら呼び出し側は元の処理（FE の capability など）に任せること。
+     */
+    public static boolean isAvailable() {
+        return MIXIN_APPLIED && AE2OptiConfig.p2p.newDistribution;
     }
 
     /**
@@ -56,7 +72,7 @@ public final class FEP2PDistributor {
      * @return 実際に配った量（simulate なら配れる量）。0 以上 {@code maxReceive} 以下
      */
     public static long distribute(PartP2PFEPower input, long maxReceive, boolean simulate) {
-        if (maxReceive <= 0) {
+        if (maxReceive <= 0 || !MIXIN_APPLIED) {
             return 0;
         }
         final FEP2PState in = state(input);

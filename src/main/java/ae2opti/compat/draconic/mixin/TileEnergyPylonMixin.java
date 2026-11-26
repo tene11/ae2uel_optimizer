@@ -87,7 +87,8 @@ public abstract class TileEnergyPylonMixin implements ILongEnergyReceiver {
             at = @At(value = "INVOKE",
                     target = "Lcom/brandon3055/brandonscore/blocks/TileEnergyBase;sendEnergyToAll(Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;I)I"))
     private int ae2opti$sendToP2PAsLong(IBlockAccess world, BlockPos pos, int maxSend, Operation<Integer> original) {
-        if (!AE2OptiConfig.p2p.draconicPylonLongOutput || !(world instanceof World) || ((World) world).isRemote) {
+        if (!AE2OptiConfig.p2p.draconicPylonLongOutput || !FEP2PDistributor.isAvailable()
+                || !(world instanceof World) || ((World) world).isRemote) {
             return original.call(world, pos, maxSend);
         }
         final TileEnergyStorageCore core = this.getCore();

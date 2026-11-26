@@ -44,7 +44,7 @@ import java.util.Set;
  *   <li>作ってから {@code energy.linkedGridRebuildInterval} tick（既定 5）たったとき（サーバーの tick 数で見る）。
  *       下のファイバーの出入りで確実に作り直されるので、これは取りこぼしがあったときのための保険。1 なら毎 tick 作り直す。</li>
  *   <li>どこかの網で {@link IEnergyGridProvider}（ファイバー）の addNode / removeNode が起きたとき
- *       （{@link #onProviderChanged()} が全体共通のバージョン番号を進める）。
+ *       （{@link #onProviderChanged} が全体共通のバージョン番号を進め、その網が入っていた一覧を手放す）。
  *       ファイバーの内側・外側どちらのノードが別の網へ移っても、AE2 は必ず元の網の removeNode と
  *       新しい網の addNode を呼ぶので、網の統合・分割・チャンクのアンロード・ファイバーの破壊はすべてここで拾える。</li>
  * </ul>
@@ -146,10 +146,29 @@ public final class EnergyLinks {
         }
     }
 
-    /** EnergyGridCache の addNode / removeNode で、ファイバー（IEnergyGridProvider）が出入りしたときに呼ぶ */
-    public static void onProviderChanged() {
+    /**
+     * EnergyGridCache の addNode / removeNode で、ファイバー（IEnergyGridProvider）が出入りしたときに呼ぶ。
+     *
+     * <p>全体共通のバージョン番号を進めるのに加えて、{@code changed} が入っている一覧を、その一覧の網すべてから外す。
+     * バージョンが変わっても、各網の一覧は次に {@link #get} が呼ばれるまで残る。{@link #get} は自分の網だけでは
+     * 足りなかったときにしか呼ばれないので、満タンにも空にもならない網は、壊れた網（Grid・ノード・タイル）を
+     * 一覧の中に持ち続けてしまう。ここで外しておけば、壊れた網はほかの網から参照されなくなる。</p>
+     *
+     * <p>同じ一覧の網はすべて同じ {@link Component} を持っているので、{@code changed} の一覧を外せば、
+     * その一覧を持っている網は残らない。外したあとは、次に必要になったときに {@link #get} が作り直す。</p>
+     */
+    public static void onProviderChanged(EnergyGridCache changed) {
         version++;
         versionBumps++;
+        final Component links = ((EnergyLinkHolder) changed).ae2opti$getLinks();
+        if (links == null) {
+            return;
+        }
+        for (EnergyGridCache grid : links.grids) {
+            ((EnergyLinkHolder) grid).ae2opti$setLinks(null);
+        }
+        // links.grids に changed が入っていない場合（作り直しの途中で入れ替わった等）にも、自分の分は確実に外す
+        ((EnergyLinkHolder) changed).ae2opti$setLinks(null);
     }
 
     /**

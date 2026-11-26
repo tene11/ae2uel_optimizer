@@ -50,9 +50,11 @@ import java.util.function.Predicate;
  * AE2UEL で IEnergyGridProvider を実装しているのは石英ファイバーだけで、その getProviderStoredEnergy は 0 を返すだけなので結果は変わらない。
  * spark では extractAEPower の 2.2% がこのキュー追加（PriorityQueue.add）だった。</p>
  *
+ * <p>energy.fastPath がオフなら、ここでは何もしない（元の AE2UEL の処理そのまま。energy.linkedGridCache も効かない）。</p>
+ *
  * <p>(1-B) 自分の網で足りなかったときの探索は、energy.linkedGridCache がオンなら {@link EnergyLinks} を使う。
  * つながった網の一覧を tick ごとに1回だけ作って使い回し、呼び出しごとに1回だけ並べて順番に処理する。
- * 一覧は、どこかの網でファイバーが addNode / removeNode されたとき（ここで {@link EnergyLinks#onProviderChanged()} を呼ぶ）
+ * 一覧は、どこかの網でファイバーが addNode / removeNode されたとき（ここで {@link EnergyLinks#onProviderChanged} を呼ぶ）
  * と、tick が変わったときに作り直す。ファイバー以外のつながりがある網では、元と同じ探索に戻る。</p>
  *
  * (2) extractProviderPower / injectProviderPower は呼ばれるたびに
@@ -160,7 +162,7 @@ public abstract class EnergyGridCacheMixin implements EnergyLinkHolder {
         this.ae2opti$fullTick = AE2OPTI$NO_MARK;
         this.ae2opti$emptyTick = AE2OPTI$NO_MARK;
         if (machine instanceof IEnergyGridProvider) {
-            EnergyLinks.onProviderChanged();
+            EnergyLinks.onProviderChanged((EnergyGridCache) (Object) this);
         }
     }
 
@@ -169,7 +171,7 @@ public abstract class EnergyGridCacheMixin implements EnergyLinkHolder {
         this.ae2opti$fullTick = AE2OPTI$NO_MARK;
         this.ae2opti$emptyTick = AE2OPTI$NO_MARK;
         if (machine instanceof IEnergyGridProvider) {
-            EnergyLinks.onProviderChanged();
+            EnergyLinks.onProviderChanged((EnergyGridCache) (Object) this);
         }
     }
 
@@ -178,7 +180,7 @@ public abstract class EnergyGridCacheMixin implements EnergyLinkHolder {
     @Inject(method = "extractAEPower", at = @At("HEAD"), cancellable = true)
     private void ae2opti$extractFastPath(double amt, Actionable mode, PowerMultiplier pm,
                                             CallbackInfoReturnable<Double> cir) {
-        if (!AE2OptiConfig.energy.fastPath && !AE2OptiConfig.energy.linkedGridCache) {
+        if (!AE2OptiConfig.energy.fastPath) {
             return;
         }
         final EnergyGridCache self = (EnergyGridCache) (Object) this;
@@ -240,7 +242,7 @@ public abstract class EnergyGridCacheMixin implements EnergyLinkHolder {
 
     @Inject(method = "getEnergyDemand", at = @At("HEAD"), cancellable = true)
     private void ae2opti$demandFastPath(double maxRequired, CallbackInfoReturnable<Double> cir) {
-        if (!AE2OptiConfig.energy.fastPath && !AE2OptiConfig.energy.linkedGridCache) {
+        if (!AE2OptiConfig.energy.fastPath) {
             return;
         }
         final EnergyGridCache self = (EnergyGridCache) (Object) this;
@@ -300,7 +302,7 @@ public abstract class EnergyGridCacheMixin implements EnergyLinkHolder {
 
     @Inject(method = "injectPower", at = @At("HEAD"), cancellable = true)
     private void ae2opti$injectFastPath(double amt, Actionable mode, CallbackInfoReturnable<Double> cir) {
-        if (!AE2OptiConfig.energy.fastPath && !AE2OptiConfig.energy.linkedGridCache) {
+        if (!AE2OptiConfig.energy.fastPath) {
             return;
         }
         final EnergyGridCache self = (EnergyGridCache) (Object) this;
