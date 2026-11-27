@@ -53,10 +53,6 @@ Measured with flare (spark) on a late-game Nomi-CEu world, Cleanroom 0.7.14, sin
 
 **Normal autocrafting**: AE2 time goes down to about 1/4–1/5 (for example 17.8 → 4.4 ms/tick). Crafting takes the same time as before.
 
-> Note: spark's MSPT does not include AE2's grid tick (it runs in the last tick event). Use F3 "Integrated server @ … ms ticks" or `/forge tps` to compare.
-
-<!-- TODO: クライアント側の FPS への影響を /sparkc profiler で確認してから追記 -->
-
 ### Requirements and compatibility
 
 - **Required**: AE2 Unofficial Extended Life (tested with v0.56.6 / v0.56.7), MixinBooter
